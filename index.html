@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Rilievo">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icona.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icona.svg">
+<title>Rilievo</title>
+<style>
+  :root {
+    --fondo: #f4f3ef; --carta: #ffffff; --inchiostro: #1d1d1b; --tenue: #6b6a66;
+    --linea: #d9d7d0; --accento: #1f5fbf; --ok: #1e8a4c; --attento: #d98a00; --errore: #c62828;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--fondo); color: var(--inchiostro);
+    font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; overflow: hidden; }
+  #app { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+  header { display: flex; gap: 8px; align-items: center; padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+    background: var(--carta); border-bottom: 1px solid var(--linea); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 600; }
+  #conteggio { color: var(--tenue); font-size: 13px; margin-right: auto; }
+  button, select, label.bottone { font: inherit; min-height: 40px; padding: 0 14px; border-radius: 10px;
+    border: 1px solid var(--linea); background: var(--carta); color: var(--inchiostro); cursor: pointer; }
+  button.attivo { background: var(--accento); border-color: var(--accento); color: #fff; }
+  button.primario { background: var(--inchiostro); color: #fff; border-color: var(--inchiostro); }
+  label.bottone { display: inline-flex; align-items: center; }
+  label.bottone input { display: none; }
+  #tela { position: relative; overflow: hidden; touch-action: none; background: #fbfaf7; }
+  #tela svg { width: 100%; height: 100%; display: block; }
+  #vuoto { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; color: var(--tenue); padding: 24px; }
+  #vuoto strong { color: var(--inchiostro); display: block; font-size: 18px; margin-bottom: 6px; }
+  .seg { stroke: var(--inchiostro); stroke-width: 1.4; vector-effect: non-scaling-stroke; stroke-linecap: round; }
+  .seg.ok { stroke: var(--ok); stroke-width: 3; }
+  .seg.attento { stroke: var(--attento); stroke-width: 3; }
+  .seg.errore { stroke: var(--errore); stroke-width: 3; }
+  .seg.sel { stroke: var(--accento); stroke-width: 5; }
+  .diag { stroke: #7a4fbf; stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+  .diag.sel { stroke: var(--accento); stroke-width: 4; }
+  .etichetta { font-size: 12px; font-weight: 600; paint-order: stroke; stroke: #fff; stroke-width: 3px; }
+  footer { background: var(--carta); border-top: 1px solid var(--linea); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  #nessuna { color: var(--tenue); }
+  #pannello { display: none; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #pannello.visibile { display: flex; }
+  #quale { font-weight: 600; min-width: 150px; }
+  #disegno { color: var(--tenue); font-size: 13px; }
+  #misura { font: 600 22px/1 -apple-system, sans-serif; width: 160px; min-height: 48px; padding: 0 12px;
+    border-radius: 10px; border: 2px solid var(--accento); }
+  #storico { font-size: 13px; color: var(--tenue); flex-basis: 100%; }
+  #storico .annullata { text-decoration: line-through; }
+  #avviso { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); background: var(--inchiostro);
+    color: #fff; padding: 8px 14px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #avviso.visibile { opacity: .92; }
+  .scarto { font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1 id="titolo">Rilievo</h1>
+    <span id="conteggio"></span>
+    <label class="bottone">Apri ricalco<input type="file" id="apri" accept=".json,application/json"></label>
+    <select id="unita" title="Unità del DISTO">
+      <option value="m">DISTO in m</option><option value="cm">DISTO in cm</option><option value="mm">DISTO in mm</option>
+    </select>
+    <button id="bDiag">Diagonale</button>
+    <button id="bAdatta">Adatta</button>
+    <button id="bEsporta" class="primario">Esporta</button>
+  </header>
+  <div id="tela">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+      <g id="mondo"><g id="sfondo" transform="scale(1,-1)"></g><g id="linee"></g><g id="diagonali"></g><g id="segni"></g></g>
+      <g id="etichette"></g>
+    </svg>
+    <div id="vuoto"><div><strong>Nessun ricalco aperto</strong>Apri il file <code>ricalco.json</code> preparato in studio.</div></div>
+    <div id="avviso"></div>
+  </div>
+  <footer>
+    <div id="nessuna">Tocca una linea per misurarla. «Diagonale»: tocca due angoli.</div>
+    <div id="pannello">
+      <span id="quale"></span>
+      <span id="disegno"></span>
+      <input id="misura" type="text" inputmode="decimal" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="misura">
+      <button id="bDubbia">Dubbia</button>
+      <button id="bAnnulla">Annulla ultima</button>
+      <button id="bElimina" style="display:none">Elimina diagonale</button>
+      <div id="storico"></div>
+    </div>
+  </footer>
+</div>
+<script>
+"use strict";
+// Tutto resta sull'iPad: nessuna chiamata di rete. Il salvataggio è nel browser
+// (localStorage) e l'uscita è il file esportato.
+
+const $ = id => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const S = { ric: null, segs: [], misure: {}, diag: [], sel: null, modoDiag: false, diagA: null,
+            vista: { s: 40, tx: 0, ty: 0 } };
+
+// ── memoria locale ────────────────────────────────────────────────────
+const chiave = () => S.ric ? `rilievo:${S.ric.caso}:${S.ric.piano}` : null;
+function leggi(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+function scrivi(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+function salva() {
+  if (!S.ric) return;
+  if (!scrivi(chiave(), { misure: S.misure, diag: S.diag, unita: $("unita").value }))
+    avviso("⚠️ Salvataggio non riuscito: esporta subito il rilievo");
+}
+
+// ── caricamento ───────────────────────────────────────────────────────
+function carica(ric, daMemoria) {
+  if (ric.formato !== "ricalco-1") { avviso("File non riconosciuto: serve ricalco.json"); return; }
+  S.ric = ric;
+  S.segs = [];
+  for (const p of ric.polilinee)
+    for (let k = 0; k < p.punti.length - 1; k++) {
+      const a = p.punti[k], b = p.punti[k + 1];
+      S.segs.push({ id: `${p.id}.${k + 1}`, a, b, len: Math.hypot(b[0] - a[0], b[1] - a[1]) });
+    }
+  const dati = leggi(chiave()) || {};
+  S.misure = dati.misure || {}; S.diag = dati.diag || [];
+  if (dati.unita) $("unita").value = dati.unita;
+  S.sel = null;
+  if (!daMemoria) scrivi("ricalco:ultimo", ric) || avviso("Ricalco troppo grande per restare in memoria: riaprilo alla prossima sessione");
+  $("titolo").textContent = `${ric.caso} · piano ${ric.piano}`;
+  $("vuoto").style.display = "none";
+  disegnaSfondo(); disegnaLinee(); adatta(); aggiorna();
+}
+$("apri").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { try { carica(JSON.parse(r.result), false); } catch (err) { avviso("File non leggibile"); } };
+  r.readAsText(f); e.target.value = "";
+});
+
+// ── disegno ───────────────────────────────────────────────────────────
+function el(tag, attr, padre) {
+  const n = document.createElementNS(NS, tag);
+  for (const k in attr) n.setAttribute(k, attr[k]);
+  if (padre) padre.appendChild(n);
+  return n;
+}
+function disegnaSfondo() {
+  const g = $("sfondo"); g.innerHTML = "";
+  const f = S.ric.sfondo; if (!f) return;
+  el("image", { href: f.dati, x: f.x, y: -f.y, width: f.larghezza, height: f.altezza,
+                opacity: 0.45, preserveAspectRatio: "none" }, g);
+}
+function disegnaLinee() {
+  const g = $("linee"); g.innerHTML = "";
+  for (const s of S.segs) s.nodo = el("line", { x1: s.a[0], y1: s.a[1], x2: s.b[0], y2: s.b[1], class: "seg" }, g);
+}
+function valoreUsato(ms) {
+  for (let i = (ms || []).length - 1; i >= 0; i--) if (!ms[i].annullata) return ms[i];
+  return null;
+}
+function classeScarto(mm, disegno_m) {
+  const pct = Math.abs(mm / 1000 - disegno_m) / disegno_m * 100;
+  return pct <= 2 ? "ok" : pct <= 5 ? "attento" : "errore";
+}
+function aggiorna() {
+  if (!S.ric) return;
+  for (const s of S.segs) {
+    const m = valoreUsato(S.misure[s.id]);
+    s.nodo.setAttribute("class", "seg" + (m ? " " + classeScarto(m.valore_mm, s.len) : "") + (S.sel === s.id ? " sel" : ""));
+  }
+  const gd = $("diagonali"); gd.innerHTML = "";
+  for (const d of S.diag)
+    el("line", { x1: d.a[0], y1: d.a[1], x2: d.b[0], y2: d.b[1], class: "diag" + (S.sel === d.id ? " sel" : "") }, gd);
+  const gs = $("segni"); gs.innerHTML = "";
+  if (S.diagA) el("circle", { cx: S.diagA[0], cy: S.diagA[1], r: 8 / S.vista.s, fill: "#7a4fbf" }, gs);
+  trasforma();
+  const n = Object.keys(S.misure).filter(k => valoreUsato(S.misure[k]) && !k.startsWith("D")).length;
+  $("conteggio").textContent = `${n} linee misurate · ${S.diag.length} diagonali`;
+  pannello();
+}
+function trasforma() {
+  const v = S.vista;
+  $("mondo").setAttribute("transform", `matrix(${v.s} 0 0 ${-v.s} ${v.tx} ${v.ty})`);
+  const g = $("etichette"); g.innerHTML = "";
+  if (!S.ric) return;
+  const scrivi = (x, y, testo, colore) => {
+    const t = el("text", { x: x * v.s + v.tx, y: -y * v.s + v.ty, class: "etichetta", fill: colore, "text-anchor": "middle" }, g);
+    t.textContent = testo;
+  };
+  for (const s of S.segs) {
+    const m = valoreUsato(S.misure[s.id]); if (!m) continue;
+    scrivi((s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2, cm(m.valore_mm) + (m.dubbia ? "?" : ""),
+      getComputedStyle(document.documentElement).getPropertyValue("--" + classeScarto(m.valore_mm, s.len)));
+  }
+  for (const d of S.diag) {
+    const m = valoreUsato(d.misure); if (!m) continue;
+    scrivi((d.a[0] + d.b[0]) / 2, (d.a[1] + d.b[1]) / 2, cm(m.valore_mm) + (m.dubbia ? "?" : ""), "#7a4fbf");
+  }
+}
+const cm = mm => (mm / 10).toLocaleString("it-IT", { maximumFractionDigits: 1 });
+
+// ── vista: adatta, sposta, zoom ───────────────────────────────────────
+function adatta() {
+  if (!S.ric) return;
+  const r = $("tela").getBoundingClientRect(), f = S.ric.sfondo;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of S.segs) for (const p of [s.a, s.b]) {
+    x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]);
+  }
+  const sc = 0.92 * Math.min(r.width / (x1 - x0), r.height / (y1 - y0));
+  S.vista = { s: sc, tx: r.width / 2 - sc * (x0 + x1) / 2, ty: r.height / 2 + sc * (y0 + y1) / 2 };
+  aggiorna();
+}
+$("bAdatta").onclick = adatta;
+window.addEventListener("resize", () => S.ric && trasforma());
+const mondo = (sx, sy) => [(sx - S.vista.tx) / S.vista.s, -(sy - S.vista.ty) / S.vista.s];
+function zoom(f, cx, cy) {
+  const v = S.vista, ns = Math.min(Math.max(v.s * f, 2), 2000);
+  const k = ns / v.s;
+  v.tx = cx - (cx - v.tx) * k; v.ty = cy - (cy - v.ty) * k; v.s = ns;
+  aggiorna();
+}
+const tela = $("tela"), dita = new Map();
+let gesto = null;
+tela.addEventListener("pointerdown", e => {
+  tela.setPointerCapture(e.pointerId);
+  const r = tela.getBoundingClientRect();
+  dita.set(e.pointerId, [e.clientX - r.left, e.clientY - r.top]);
+  if (dita.size === 1) gesto = { tipo: "tocco", da: [e.clientX - r.left, e.clientY - r.top], vista: { ...S.vista } };
+  if (dita.size === 2) {
+    const [p, q] = [...dita.values()];
+    gesto = { tipo: "pinza", dist: Math.hypot(p[0] - q[0], p[1] - q[1]), centro: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], vista: { ...S.vista } };
+  }
+});
+tela.addEventListener("pointermove", e => {
+  if (!dita.has(e.pointerId) || !gesto) return;
+  const r = tela.getBoundingClientRect();
+  dita.set(e.pointerId, [e.clientX - r.left, e.clientY - r.top]);
+  if (gesto.tipo !== "pinza" && dita.size === 1) {
+    const p = dita.get(e.pointerId), dx = p[0] - gesto.da[0], dy = p[1] - gesto.da[1];
+    if (gesto.tipo === "tocco" && Math.hypot(dx, dy) > 8) gesto.tipo = "sposta";
+    if (gesto.tipo === "sposta") { S.vista.tx = gesto.vista.tx + dx; S.vista.ty = gesto.vista.ty + dy; trasforma(); }
+  } else if (gesto.tipo === "pinza" && dita.size === 2) {
+    const [p, q] = [...dita.values()];
+    const d = Math.hypot(p[0] - q[0], p[1] - q[1]), c = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+    S.vista = { ...gesto.vista };
+    zoom(d / gesto.dist, gesto.centro[0], gesto.centro[1]);
+    S.vista.tx += c[0] - gesto.centro[0]; S.vista.ty += c[1] - gesto.centro[1];
+    trasforma();
+  }
+});
+function fine(e) {
+  if (!dita.has(e.pointerId)) return;
+  const p = dita.get(e.pointerId);
+  dita.delete(e.pointerId);
+  if (gesto && gesto.tipo === "tocco" && dita.size === 0) tocca(p[0], p[1]);
+  if (dita.size === 0) gesto = null;
+}
+tela.addEventListener("pointerup", fine);
+tela.addEventListener("pointercancel", e => { dita.delete(e.pointerId); gesto = null; });
+tela.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = tela.getBoundingClientRect();
+  zoom(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+
+// ── selezione ─────────────────────────────────────────────────────────
+function distSeg(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy;
+  const t = L ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L)) : 0;
+  return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+}
+function tocca(sx, sy) {
+  if (!S.ric) return;
+  const p = mondo(sx, sy), tol = 24 / S.vista.s;
+  if (S.modoDiag) {
+    let migliore = null, dmin = 30 / S.vista.s;
+    for (const s of S.segs) for (const q of [s.a, s.b]) {
+      const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (d < dmin) { dmin = d; migliore = q; }
+    }
+    if (!migliore) { avviso("Tocca vicino a un angolo"); return; }
+    if (!S.diagA) { S.diagA = migliore; aggiorna(); return; }
+    if (migliore === S.diagA) return;
+    const id = "D" + (S.diag.reduce((m, d) => Math.max(m, +d.id.slice(1)), 0) + 1);
+    S.diag.push({ id, a: S.diagA, b: migliore, len: Math.hypot(migliore[0] - S.diagA[0], migliore[1] - S.diagA[1]), misure: [] });
+    S.diagA = null; S.sel = id; salva(); aggiorna(); fuoco();
+    return;
+  }
+  let migliore = null, dmin = tol;
+  for (const d of S.diag) { const x = distSeg(p, d.a, d.b); if (x < dmin) { dmin = x; migliore = d.id; } }
+  for (const s of S.segs) { const x = distSeg(p, s.a, s.b); if (x < dmin) { dmin = x; migliore = s.id; } }
+  S.sel = migliore; aggiorna();
+  if (migliore) fuoco();
+}
+$("bDiag").onclick = () => {
+  S.modoDiag = !S.modoDiag; S.diagA = null;
+  $("bDiag").classList.toggle("attivo", S.modoDiag);
+  avviso(S.modoDiag ? "Diagonale: tocca il primo angolo, poi il secondo" : "Diagonale disattivata");
+  aggiorna();
+};
+// il cursore va nella casella subito, dentro il gesto del tocco: Safari su iPad
+// non lo consente più tardi, e senza cursore il DISTO scriverebbe nel vuoto
+function fuoco() { const i = $("misura"); i.value = ""; i.focus({ preventScroll: true }); }
+tela.addEventListener("click", () => { if (S.sel) $("misura").focus({ preventScroll: true }); });
+
+// ── pannello e misure ─────────────────────────────────────────────────
+function elementoSel() {
+  if (!S.sel) return null;
+  if (S.sel.startsWith("D")) { const d = S.diag.find(d => d.id === S.sel); return d && { id: d.id, len: d.len, misure: d.misure, diag: d }; }
+  const s = S.segs.find(s => s.id === S.sel);
+  return s && { id: s.id, len: s.len, misure: (S.misure[s.id] = S.misure[s.id] || []) };
+}
+function pannello() {
+  const e = elementoSel();
+  $("pannello").classList.toggle("visibile", !!e);
+  $("nessuna").style.display = e ? "none" : "";
+  if (!e) return;
+  $("quale").textContent = e.diag ? `Diagonale ${e.id}` : `Linea ${e.id}`;
+  $("disegno").textContent = `disegno ${e.len.toLocaleString("it-IT", { maximumFractionDigits: 2 })} m`;
+  $("bElimina").style.display = e.diag ? "" : "none";
+  const u = valoreUsato(e.misure);
+  $("bDubbia").classList.toggle("attivo", !!(u && u.dubbia));
+  $("storico").innerHTML = e.misure.length ? e.misure.map(m => {
+    const pct = (m.valore_mm / 1000 - e.len) / e.len * 100;
+    return `<span class="${m.annullata ? "annullata" : ""}">${cm(m.valore_mm)} cm (${m.origine}${m.dubbia ? ", dubbia" : ""})` +
+      ` <span class="scarto">${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%</span></span>`;
+  }).join(" · ") : "Nessuna misura: premi il DISTO o scrivi il valore e Invio";
+}
+// il DISTO in modalità tastiera scrive tutto in pochi millisecondi: così si
+// distingue la misura del laser da quella battuta a mano
+let primoTasto = 0;
+$("misura").addEventListener("keydown", e => {
+  if (!primoTasto && e.key.length === 1) primoTasto = performance.now();
+  if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); registra(); }
+});
+function registra() {
+  const e = elementoSel(), testo = $("misura").value;
+  const veloce = primoTasto && performance.now() - primoTasto < 250;
+  primoTasto = 0;
+  if (!e || !testo.trim()) return;
+  const n = parseFloat(testo.replace(",", ".").replace(/[^0-9.\-]/g, ""));
+  if (!isFinite(n)) { avviso("Valore non leggibile"); return; }
+  const molt = { m: 1000, cm: 10, mm: 1 }[$("unita").value];
+  const mm = Math.round(n * molt);
+  if (mm < 20 || mm > 60000) { avviso(`${cm(mm)} cm: valore strano, controlla l'unità del DISTO`); $("misura").select(); return; }
+  e.misure.push({ valore_mm: mm, origine: veloce ? "disto" : "manuale", ora: new Date().toISOString() });
+  $("misura").value = "";
+  salva(); aggiorna();
+  avviso(`${e.id}: ${cm(mm)} cm`);
+}
+$("bAnnulla").onclick = () => {
+  const e = elementoSel(); if (!e) return;
+  const u = valoreUsato(e.misure); if (u) { u.annullata = true; salva(); aggiorna(); }
+};
+$("bDubbia").onclick = () => {
+  const e = elementoSel(); if (!e) return;
+  const u = valoreUsato(e.misure); if (u) { u.dubbia = !u.dubbia; salva(); aggiorna(); }
+};
+$("bElimina").onclick = () => {
+  const e = elementoSel(); if (!e || !e.diag) return;
+  if (e.misure.length && !confirm(`Eliminare la diagonale ${e.id} con le sue misure?`)) return;
+  S.diag = S.diag.filter(d => d.id !== e.id); S.sel = null; salva(); aggiorna();
+};
+$("unita").onchange = salva;
+
+// ── esporta ───────────────────────────────────────────────────────────
+$("bEsporta").onclick = () => {
+  if (!S.ric) { avviso("Niente da esportare"); return; }
+  const linee = {};
+  for (const s of S.segs) if ((S.misure[s.id] || []).length)
+    linee[s.id] = { a: s.a, b: s.b, disegno_mm: Math.round(s.len * 1000), misure: S.misure[s.id] };
+  const dati = { formato: "misure-su-ricalco-1", caso: S.ric.caso, piano: S.ric.piano,
+    esportato: new Date().toISOString(), unita: "mm", linee,
+    diagonali: S.diag.map(d => ({ id: d.id, a: d.a, b: d.b, disegno_mm: Math.round(d.len * 1000), misure: d.misure })) };
+  const blob = new Blob([JSON.stringify(dati, null, 1)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${S.ric.caso}_piano${S.ric.piano}_misure_${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+
+// ── varie ─────────────────────────────────────────────────────────────
+let timerAvviso;
+function avviso(t) {
+  const a = $("avviso"); a.textContent = t; a.classList.add("visibile");
+  clearTimeout(timerAvviso); timerAvviso = setTimeout(() => a.classList.remove("visibile"), 2200);
+}
+const ultimo = leggi("ricalco:ultimo");
+if (ultimo) carica(ultimo, true);
+if ("serviceWorker" in navigator && location.protocol !== "file:")
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "Rilievo",
+  "short_name": "Rilievo",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f3ef",
+  "theme_color": "#ffffff",
+  "icons": [{ "src": "icona.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
